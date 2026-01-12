@@ -55,9 +55,10 @@ def get_logger() -> Logger:
     """Get configured logger with RichHandler."""
     logger = getLogger(__package__)
     logger.setLevel(INFO)
-    logger.addHandler(
-        RichHandler(
-            show_time=False,
+    if not logger.handlers:
+        logger.addHandler(
+            RichHandler(
+                show_time=False,
+            )
         )
-    )
     return logger
