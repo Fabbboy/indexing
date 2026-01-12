@@ -12,9 +12,11 @@ CREATE TABLE IF NOT EXISTS chunks (
     modified_time REAL NOT NULL,
     start_char INTEGER NOT NULL,
     end_char INTEGER NOT NULL,
+    indexed INTEGER NOT NULL DEFAULT 0,
     UNIQUE(file_path, chunk_index)
 );
 CREATE INDEX IF NOT EXISTS idx_file_path ON chunks(file_path);
+CREATE INDEX IF NOT EXISTS idx_indexed ON chunks(indexed);
 """
 
 
