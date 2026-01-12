@@ -1,0 +1,14 @@
+[project]
+name = "indexing"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "faiss-cpu>=1.13.2",
+    "numpy>=2.4.1",
+    "openai>=2.15.0",
+    "rich>=14.2.0",
+    "tqdm>=4.67.1",
+    "typer>=0.21.1",
+]
