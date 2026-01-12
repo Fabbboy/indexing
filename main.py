@@ -3,6 +3,9 @@ from pathlib import Path
 from openai import OpenAI
 import numpy as np
 from tqdm import tqdm
+from rich.console import Console
+from rich.markdown import Markdown
+import time
 
 from config import Constants, get_logger
 from database import ensure_db
@@ -16,11 +19,13 @@ from indexing import (
     generate_embeddings_batch,
     ensure_root,
     read_chunk_content,
+    get_indexed_files,
 )
 
 CWD = Path.cwd()
 APP = Typer()
 LOGGER = get_logger()
+CONSOLE = Console()
 
 
 def connect_client(api: str, key: str) -> OpenAI:
@@ -41,14 +46,17 @@ def list_available_models(client: OpenAI) -> None:
 
 @APP.command()
 def index(
-    api_key: str,
     source_root: Path = CWD,
     index_root: Path = CWD,
     api_base: str = "http://localhost:11434/v1",
+    api_key: str = "not-needed",
     model: str = Constants.MODEL.value,
+    chunk_size: int = Constants.CHUNK_SIZE.value,
     erase: bool = False,
 ) -> None:
     """Index source files into vector database with streaming to avoid RAM exhaustion."""
+    start_time = time.time()
+
     if is_excluded(source_root):
         LOGGER.error(f"Source root {source_root} is in the excludes list.")
         return
@@ -63,10 +71,17 @@ def index(
     LOGGER.info(f"Indexing files from {source_root} into index at {index_root}")
 
     paths = collect_paths(source_root)
+
+    if not erase:
+        indexed_files = get_indexed_files(meta_db)
+        paths = [p for p in paths if str(p.relative_to(source_root)) not in indexed_files]
+        if len(indexed_files) > 0:
+            LOGGER.info(f"Found {len(indexed_files)} already indexed files, skipping them.")
+
     LOGGER.info(f"Collected {len(paths)} files to index.")
 
     if len(paths) == 0:
-        LOGGER.warning("No files to index.")
+        LOGGER.warning("No new files to index.")
         return
 
     file_batch_size = Constants.FILE_BATCH_SIZE.value
@@ -77,7 +92,7 @@ def index(
         for i in range(0, len(paths), file_batch_size):
             file_batch = paths[i:i+file_batch_size]
 
-            embed_queue = process_file_batch(meta_db, file_batch, source_root)
+            embed_queue = process_file_batch(meta_db, file_batch, source_root, chunk_size)
 
             if len(embed_queue) == 0:
                 pbar.update(len(file_batch))
@@ -105,16 +120,19 @@ def index(
                 faiss_index.add(vector_array)
                 total_chunks += len(vectors)
 
+                save_index(faiss_index, index_root)
+
             del embed_queue
             del vectors
             del texts
 
             pbar.update(len(file_batch))
 
-    save_index(faiss_index, index_root)
     meta_db.close()
 
-    LOGGER.info(f"✓ Indexing complete! Indexed {total_chunks} chunks from {len(paths)} files.")
+    elapsed = time.time() - start_time
+    elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+    LOGGER.info(f"✓ Indexing complete! Indexed {total_chunks} chunks from {len(paths)} files in {elapsed_str}.")
 
 
 @APP.command()
@@ -271,11 +289,11 @@ Answer:"""
         )
         answer = chat_response.choices[0].message.content
 
-        LOGGER.info("\n" + "="*80)
-        LOGGER.info(f"Question: {question}")
-        LOGGER.info("="*80)
-        print(answer)
-        LOGGER.info("="*80)
+        CONSOLE.print("\n" + "="*80)
+        CONSOLE.print(f"[bold cyan]Question:[/bold cyan] {question}")
+        CONSOLE.print("="*80 + "\n")
+        CONSOLE.print(Markdown(answer))
+        CONSOLE.print("\n" + "="*80)
 
     except Exception as e:
         LOGGER.error(f"Failed to generate answer: {e}")

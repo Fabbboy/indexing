@@ -68,10 +68,11 @@ def collect_paths(source_root: Path) -> list[Path]:
     return paths
 
 
-def chunk_file(file_path: Path, content: str) -> list[dict]:
+def chunk_file(file_path: Path, content: str, chunk_size: int = None) -> list[dict]:
     """Split file content into overlapping chunks with metadata."""
     chunks = []
-    chunk_size = Constants.CHUNK_SIZE.value
+    if chunk_size is None:
+        chunk_size = Constants.CHUNK_SIZE.value
     overlap = Constants.CHUNK_OVERLAP.value
 
     if len(content) <= chunk_size:
@@ -105,7 +106,8 @@ def chunk_file(file_path: Path, content: str) -> list[dict]:
 def process_file_batch(
     connection: Connection,
     paths: list[Path],
-    source_root: Path
+    source_root: Path,
+    chunk_size: int = None
 ) -> list[tuple[str, int]]:
     """Process a batch of files: read, chunk, store metadata. Returns (prefixed_text, chunk_id) pairs."""
     cursor = connection.cursor()
@@ -116,7 +118,7 @@ def process_file_batch(
             content = path.read_text(encoding='utf-8', errors='ignore')
             file_stat = path.stat()
             relative_path = path.relative_to(source_root)
-            chunks = chunk_file(relative_path, content)
+            chunks = chunk_file(relative_path, content, chunk_size)
 
             for chunk in chunks:
                 cursor.execute("""
@@ -165,3 +167,10 @@ def read_chunk_content(file_path: Path, start_char: int, end_char: int) -> str:
     except Exception as e:
         LOGGER.warning(f"Failed to read chunk from {file_path}: {e}")
         return ""
+
+
+def get_indexed_files(connection: Connection) -> set[str]:
+    """Get set of file paths that are already indexed."""
+    cursor = connection.cursor()
+    cursor.execute("SELECT DISTINCT file_path FROM chunks")
+    return {row[0] for row in cursor.fetchall()}
